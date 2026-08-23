@@ -134,9 +134,6 @@ WARDEN_SANDBOX_ENV=OPENROUTER_API_KEY,DEFAULT_PROVIDER,DEFAULT_MODEL
 forwarded to the task sandbox. `WARDEN_SANDBOX_ENV` adds optional runtime names;
 it cannot remove those core credentials. The service-role key is required for
 the private `workflow-artifacts` bucket and must never be exposed to browser code.
-Every E2B task sandbox also receives `WARDEN_ARTIFACT_STORAGE_ENABLED=true`,
-even if a host environment sets it to `false`, because sandbox-local files are
-temporary and resumable workflows require durable artifact manifests.
 Direct low-level invocations must maintain this list themselves; use
 `make run-task` for the reviewed full Warden workflow whitelist.
 
