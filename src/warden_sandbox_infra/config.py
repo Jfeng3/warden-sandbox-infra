@@ -55,6 +55,10 @@ class ControllerConfig:
             value = source_env.get(name)
             if value:
                 env[name] = value
+        if self.runtime == "e2b":
+            # Sandbox files are temporary, so every E2B run must persist
+            # workflow artifacts for cross-sandbox resume.
+            env["WARDEN_ARTIFACT_STORAGE_ENABLED"] = "true"
         if self.runtime == "e2b" and self.command_cwd:
             env[SANDBOX_INPUTS_MAPPED_ENV] = "1"
             env["WARDEN_CLIENT_RUNTIME_ROOT"] = posixpath.join(

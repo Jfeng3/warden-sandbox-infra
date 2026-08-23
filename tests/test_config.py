@@ -92,6 +92,24 @@ class ConfigTests(unittest.TestCase):
             ("SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "OPENROUTER_API_KEY"),
         )
 
+    def test_e2b_worker_env_always_enables_artifact_storage(self) -> None:
+        config = load_config(
+            {
+                "SUPABASE_URL": "https://example.supabase.co",
+                "SUPABASE_SERVICE_ROLE_KEY": "secret",
+                "WARDEN_WORKER_COMMAND": "warden worker-task",
+                "WARDEN_SANDBOX_RUNTIME": "e2b",
+                "WARDEN_SANDBOX_ENV": "WARDEN_ARTIFACT_STORAGE_ENABLED",
+            }
+        )
+
+        env = config.worker_env(
+            "task-1",
+            {"WARDEN_ARTIFACT_STORAGE_ENABLED": "false"},
+        )
+
+        self.assertEqual(env["WARDEN_ARTIFACT_STORAGE_ENABLED"], "true")
+
     def test_e2b_worker_env_uses_mapped_sandbox_runtime_root(self) -> None:
         with tempfile.TemporaryDirectory() as runtime_root:
             config = load_config(
