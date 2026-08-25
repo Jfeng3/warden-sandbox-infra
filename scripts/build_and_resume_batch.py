@@ -6,8 +6,9 @@ The command is dry-run by default. ``--execute`` creates fresh Warden tasks;
 target worker. ``--artifact-run-id`` may provide durable artifact refs from
 another task, but only when its client/post identity matches the snapshot source.
 
-Required environment for execution: E2B_API_KEY, SUPABASE_URL,
-SUPABASE_SERVICE_ROLE_KEY, and the Warden CLI's normal environment.
+Before creating tasks, the launcher validates E2B_API_KEY, SUPABASE_URL,
+SUPABASE_SERVICE_ROLE_KEY, YDC_API_KEY, and a usable Codex auth JSON. It also
+injects the research credentials explicitly into the sandbox environment.
 """
 
 from __future__ import annotations
@@ -303,10 +304,21 @@ def build_template(name: str, repo: Path, *, no_cache: bool) -> None:
     env = os.environ.copy()
     env["E2B_TEMPLATE"] = name
     env["WARDEN_REPO_PATH"] = str(repo)
+    # The Makefile invokes ``python3`` directly; force the infra venv so the
+    # E2B SDK and controller dependencies are deterministic.
+    env["PATH"] = f"{REPO_ROOT / '.venv' / 'bin'}:{env.get('PATH', '')}"
     command = ["make", "build-e2b-template"]
     if no_cache:
         command.append("NO_CACHE=1")
     subprocess.run(command, cwd=REPO_ROOT, env=env, check=True)
+
+
+def warden_cli_env(warden_repo: Path) -> dict[str, str]:
+    """Use the clean worktree's dependencies for every Warden CLI subprocess."""
+    env = build_controller_env(os.environ, REPO_ROOT / ".env", warden_repo / ".env")
+    env["PATH"] = f"{warden_repo / 'node_modules' / '.bin'}:{REPO_ROOT / '.venv' / 'bin'}:{env.get('PATH', '')}"
+    env.setdefault("WARDEN_CLIENT_RUNTIME_ROOT", str(REPO_ROOT.parent / "project-delivery" / "runtime-config"))
+    return env
 
 
 def fetch_latest_snapshot(task_id: str) -> Snapshot:
@@ -368,8 +380,7 @@ def create_resume_task(
     print(json.dumps({"command": command[:14], "source_task_id": source_id, "artifact_override_keys": sorted(overrides)}))
     if not execute:
         return None
-    env = os.environ.copy()
-    env.setdefault("WARDEN_CLIENT_RUNTIME_ROOT", str(warden_repo.parent / "project-delivery" / "runtime-config"))
+    env = warden_cli_env(warden_repo)
     result = subprocess.run(command, cwd=warden_repo, env=env, check=True, text=True, capture_output=True)
     print(result.stdout, end="")
     match = re.search(r"→ task ([0-9a-f-]{36}) ·", result.stdout)
@@ -399,8 +410,7 @@ def create_fresh_task(
     print(json.dumps({"command": command, "fresh_post": post_id}))
     if not execute:
         return None
-    env = os.environ.copy()
-    env.setdefault("WARDEN_CLIENT_RUNTIME_ROOT", str(warden_repo.parent / "project-delivery" / "runtime-config"))
+    env = warden_cli_env(warden_repo)
     result = subprocess.run(command, cwd=warden_repo, env=env, check=True, text=True, capture_output=True)
     print(result.stdout, end="")
     match = re.search(r"→ task ([0-9a-f-]{36}) ·", result.stdout)
@@ -457,8 +467,9 @@ def require_batch_runtime_env(warden_repo: Path) -> dict[str, str]:
     env["WARDEN_CODEX_AUTH_PATH"] = str(auth_path)
     env["YDC_API_KEY"] = env["YDC_API_KEY"].strip()
     forwarded = [item for item in env.get("WARDEN_SANDBOX_ENV", "").split(",") if item]
-    if "YDC_API_KEY" not in forwarded:
-        forwarded.append("YDC_API_KEY")
+    for name in ("YDC_API_KEY", "DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD"):
+        if name not in forwarded:
+            forwarded.append(name)
     env["WARDEN_SANDBOX_ENV"] = ",".join(forwarded)
     return env
 
