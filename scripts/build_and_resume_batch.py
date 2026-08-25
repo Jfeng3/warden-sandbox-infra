@@ -154,6 +154,7 @@ def main() -> int:
         update_batch_ticket(batch_ticket["id"], task_ids, args.linear_project)
 
     if args.launch:
+        require_ydc_api_key(args.warden_repo)
         launch_tasks(task_ids, template)
     print(json.dumps({"created_task_ids": task_ids, "count": len(task_ids), "linear_batch_ticket": batch_ticket}, sort_keys=True))
     return 0
@@ -256,6 +257,23 @@ def launch_tasks(task_ids: list[str], template: str) -> None:
     env["E2B_TEMPLATE"] = template
     for task_id in task_ids:
         subprocess.run(["make", "run-task", f"TASK_ID={task_id}"], cwd=REPO_ROOT, env=env, check=True)
+
+
+def require_ydc_api_key(warden_repo: Path) -> None:
+    """Fail before launch unless the fixed launcher can inject YDC_API_KEY."""
+    if os.environ.get("YDC_API_KEY"):
+        return
+    env_path = warden_repo / ".env"
+    try:
+        for line in env_path.read_text().splitlines():
+            if line.strip().startswith("YDC_API_KEY=") and line.split("=", 1)[1].strip().strip("'\""):
+                return
+    except FileNotFoundError:
+        pass
+    raise SystemExit(
+        "YDC_API_KEY is required for --launch; set it in the environment or Warden .env "
+        "(the fixed launcher injects it without putting it in the E2B template)"
+    )
 
 
 def create_batch_ticket(
