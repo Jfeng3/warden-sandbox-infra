@@ -98,6 +98,7 @@ def parse_adopt_entry(value: str) -> BatchEntry:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", action="append", default=[], help="Snapshot source task ID; repeatable")
+    parser.add_argument("--fresh-post", action="append", default=[], help="Planned post ID for a brand-new Step-0 task; repeatable")
     parser.add_argument(
         "--adopt-entry",
         action="append",
@@ -125,10 +126,9 @@ def main() -> int:
 
     if args.launch and not args.execute:
         parser.error("--launch requires --execute")
-    if not args.run_id and not args.adopt_entry:
-        parser.error("at least one --run-id or --adopt-entry is required")
-    if args.run_id and args.adopt_entry:
-        parser.error("--run-id and --adopt-entry cannot be combined")
+    modes = sum(bool(value) for value in (args.run_id, args.fresh_post, args.adopt_entry))
+    if modes != 1:
+        parser.error("provide exactly one of --run-id, --fresh-post, or --adopt-entry")
     if args.adopt_entry and (args.build or args.launch or args.artifact_run_id):
         parser.error("--adopt-entry cannot be combined with --build, --launch, or --artifact-run-id")
     if args.template_commit and not args.adopt_entry:
@@ -164,6 +164,7 @@ def main() -> int:
         "job": args.job,
         "from_step": args.from_step,
         "snapshot_sources": args.run_id,
+        "fresh_posts": args.fresh_post,
         "artifact_source": args.artifact_run_id,
         "execute": args.execute,
         "launch": args.launch,
@@ -228,6 +229,19 @@ def main() -> int:
 
     task_ids: list[str] = []
     created_entries: list[BatchEntry] = []
+    for post_id in args.fresh_post:
+        task_id = create_fresh_task(
+            post_id,
+            args.job,
+            worker_id,
+            source_repo,
+            batch_run_id=batch_run_id,
+            batch_ticket=batch_ticket,
+            execute=args.execute,
+        )
+        if task_id:
+            task_ids.append(task_id)
+            created_entries.append(BatchEntry(task_id=task_id, post_id=post_id))
     for source_id in args.run_id:
         source_snapshot = fetch_latest_snapshot(source_id)
         overrides = artifact_overrides(source_snapshot, artifact_state)
@@ -358,6 +372,37 @@ def create_resume_task(
     match = re.search(r"→ task ([0-9a-f-]{36}) ·", result.stdout)
     if not match:
         raise RuntimeError(f"Could not parse created task ID for {source_id}")
+    return match.group(1)
+
+
+def create_fresh_task(
+    post_id: str,
+    job: str,
+    worker_id: str,
+    warden_repo: Path,
+    *,
+    batch_run_id: str,
+    batch_ticket: dict[str, str] | None,
+    execute: bool,
+) -> str | None:
+    command = [
+        "npm", "run", "-s", "warden", "--", "run",
+        "--job", job, "--planned-post", post_id,
+        "--target-worker", worker_id,
+        "--set", f"batch_run_id={batch_run_id}",
+    ]
+    if batch_ticket:
+        command.extend(["--set", f"linear_batch_issue={json.dumps(batch_ticket, separators=(',', ':'))}"])
+    print(json.dumps({"command": command, "fresh_post": post_id}))
+    if not execute:
+        return None
+    env = os.environ.copy()
+    env.setdefault("WARDEN_CLIENT_RUNTIME_ROOT", str(warden_repo.parent / "project-delivery" / "runtime-config"))
+    result = subprocess.run(command, cwd=warden_repo, env=env, check=True, text=True, capture_output=True)
+    print(result.stdout, end="")
+    match = re.search(r"→ task ([0-9a-f-]{36}) ·", result.stdout)
+    if not match:
+        raise RuntimeError(f"Could not parse created task ID for fresh post {post_id}")
     return match.group(1)
 
 
