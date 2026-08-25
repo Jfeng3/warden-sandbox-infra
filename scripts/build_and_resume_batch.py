@@ -205,6 +205,10 @@ def main() -> int:
     if args.build:
         build_template(template, source_repo, no_cache=args.no_cache)
 
+    if args.launch:
+        # Fail before creating queue rows when the E2B runtime cannot execute.
+        require_batch_runtime_env(args.warden_repo)
+
     batch_ticket: dict[str, str] | None = None
     if args.execute:
         batch_ticket = (
@@ -269,7 +273,6 @@ def main() -> int:
         update_batch_ticket(batch_ticket["id"], created_entries, args.linear_project)
 
     if args.launch:
-        require_ydc_api_key(args.warden_repo)
         launch_tasks(task_ids, template, worker_id, args.warden_repo)
     print(json.dumps({
         "batch_run_id": batch_run_id,
@@ -415,18 +418,16 @@ def launch_tasks(task_ids: list[str], template: str, worker_id: str, warden_repo
     """
     if not task_ids:
         return
-    env = build_controller_env(
-        os.environ,
-        REPO_ROOT / ".env",
-        warden_repo / ".env",
-    )
+    env = require_batch_runtime_env(warden_repo)
     env["E2B_TEMPLATE"] = template
     env["WARDEN_WORKER_ID"] = worker_id
     env["WARDEN_SANDBOX_RUNTIME"] = "e2b"
     env["WARDEN_WORKER_CWD"] = "/workspace/warden"
     env["WARDEN_WORKER_COMMAND"] = 'npm run warden -- worker-task --task-id "$WARDEN_TASK_ID"'
     env.setdefault("WARDEN_MAX_CONCURRENT_TASKS", "20")
-    command = [sys.executable, "-m", "warden_sandbox_infra", "run"]
+    python = REPO_ROOT / ".venv" / "bin" / "python"
+    executable = str(python if python.is_file() else Path(sys.executable))
+    command = [executable, "-m", "warden_sandbox_infra", "run"]
     controller = subprocess.Popen(
         command,
         cwd=REPO_ROOT,
@@ -443,21 +444,23 @@ def launch_tasks(task_ids: list[str], template: str, worker_id: str, warden_repo
     }, sort_keys=True))
 
 
-def require_ydc_api_key(warden_repo: Path) -> None:
-    """Fail before launch unless the fixed launcher can inject YDC_API_KEY."""
-    if os.environ.get("YDC_API_KEY"):
-        return
-    env_path = warden_repo / ".env"
-    try:
-        for line in env_path.read_text().splitlines():
-            if line.strip().startswith("YDC_API_KEY=") and line.split("=", 1)[1].strip().strip("'\""):
-                return
-    except FileNotFoundError:
-        pass
-    raise SystemExit(
-        "YDC_API_KEY is required for --launch; set it in the environment or Warden .env "
-        "(the fixed launcher injects it without putting it in the E2B template)"
-    )
+def require_batch_runtime_env(warden_repo: Path) -> dict[str, str]:
+    """Resolve and validate every credential required by a real E2B batch."""
+    env = build_controller_env(os.environ, REPO_ROOT / ".env", warden_repo / ".env")
+    required = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "E2B_API_KEY", "YDC_API_KEY")
+    missing = [name for name in required if not env.get(name, "").strip()]
+    auth_path = Path(env.get("WARDEN_CODEX_AUTH_PATH", str(Path.home() / ".codex" / "auth.json"))).expanduser()
+    if not auth_path.is_file():
+        missing.append(f"Codex auth JSON ({auth_path})")
+    if missing:
+        raise SystemExit("Missing required E2B batch runtime credentials: " + ", ".join(missing))
+    env["WARDEN_CODEX_AUTH_PATH"] = str(auth_path)
+    env["YDC_API_KEY"] = env["YDC_API_KEY"].strip()
+    forwarded = [item for item in env.get("WARDEN_SANDBOX_ENV", "").split(",") if item]
+    if "YDC_API_KEY" not in forwarded:
+        forwarded.append("YDC_API_KEY")
+    env["WARDEN_SANDBOX_ENV"] = ",".join(forwarded)
+    return env
 
 
 def create_batch_ticket(

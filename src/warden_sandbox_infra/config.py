@@ -14,7 +14,13 @@ from .task_inputs import SANDBOX_CLIENT_RUNTIME_ROOT, SANDBOX_INPUTS_MAPPED_ENV
 DEFAULT_LEASE_TTL_SECONDS = 10 * 60
 DEFAULT_POLL_INTERVAL_SECONDS = 2.0
 DEFAULT_SANDBOX_TIMEOUT_SECONDS = 60 * 60
-DEFAULT_FORWARDED_ENV = ("SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY")
+DEFAULT_FORWARDED_ENV = (
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    # Quantitative research is a required buying-guide runtime dependency.
+    "YDC_API_KEY",
+)
 INFRA_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_VERCEL_PROJECT_PATH = INFRA_ROOT.parent / "warden" / ".vercel" / "project.json"
 DEFAULT_CLIENT_RUNTIME_ROOT = INFRA_ROOT.parent / "project-delivery" / "runtime-config"

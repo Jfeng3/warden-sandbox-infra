@@ -128,12 +128,20 @@ class BuildAndResumeBatchTests(unittest.TestCase):
 
         with patch.dict(
             build_and_resume_batch.os.environ,
-            {"WARDEN_MAX_CONCURRENT_TASKS": "7", "WARDEN_CODEX_AUTH_PATH": "/tmp/jupiter-auth.json"},
+            {
+                "WARDEN_MAX_CONCURRENT_TASKS": "7",
+                "WARDEN_CODEX_AUTH_PATH": "/tmp/jupiter-auth.json",
+                "YDC_API_KEY": "ydc-secret",
+                "WARDEN_SANDBOX_ENV": "YDC_API_KEY",
+                "SUPABASE_URL": "https://example.supabase.co",
+                "SUPABASE_SERVICE_ROLE_KEY": "service-secret",
+                "E2B_API_KEY": "e2b-secret",
+            },
             clear=True,
         ), patch.object(
             build_and_resume_batch,
-            "build_controller_env",
-            side_effect=lambda source, _infra_env, _warden_env: dict(source),
+            "require_batch_runtime_env",
+            side_effect=lambda _warden_repo: dict(build_and_resume_batch.os.environ),
         ), patch.object(build_and_resume_batch.subprocess, "Popen", return_value=Controller()) as popen:
             build_and_resume_batch.launch_tasks(
                 [TASK_ID, "cccccccc-cccc-4ccc-8ccc-cccccccccccc"],
@@ -144,7 +152,9 @@ class BuildAndResumeBatchTests(unittest.TestCase):
 
         command = popen.call_args.args[0]
         env = popen.call_args.kwargs["env"]
-        self.assertEqual(command, [build_and_resume_batch.sys.executable, "-m", "warden_sandbox_infra", "run"])
+        expected_python = build_and_resume_batch.REPO_ROOT / ".venv" / "bin" / "python"
+        expected_executable = str(expected_python if expected_python.is_file() else Path(build_and_resume_batch.sys.executable))
+        self.assertEqual(command, [expected_executable, "-m", "warden_sandbox_infra", "run"])
         self.assertEqual(env["E2B_TEMPLATE"], "template-v2")
         self.assertEqual(env["WARDEN_WORKER_ID"], "e2b:worker")
         self.assertEqual(env["WARDEN_SANDBOX_RUNTIME"], "e2b")
@@ -160,12 +170,12 @@ class BuildAndResumeBatchTests(unittest.TestCase):
 
         with patch.dict(
             build_and_resume_batch.os.environ,
-            {},
+            {"YDC_API_KEY": "ydc-secret", "WARDEN_SANDBOX_ENV": "YDC_API_KEY"},
             clear=True,
         ), patch.object(
             build_and_resume_batch,
-            "build_controller_env",
-            side_effect=lambda source, _infra_env, _warden_env: dict(source),
+            "require_batch_runtime_env",
+            side_effect=lambda _warden_repo: dict(build_and_resume_batch.os.environ),
         ), patch.object(build_and_resume_batch.subprocess, "Popen", return_value=Controller()) as popen:
             build_and_resume_batch.launch_tasks([TASK_ID], "template-v2", "e2b:worker", Path("/tmp/warden"))
 
