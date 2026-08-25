@@ -27,7 +27,10 @@ from uuid import uuid4
 
 import httpx
 
-from scripts.run_warden_task import build_controller_env
+try:
+    from scripts.run_warden_task import build_controller_env
+except ModuleNotFoundError:  # Direct execution places this file's directory on sys.path.
+    from run_warden_task import build_controller_env
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
