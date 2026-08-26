@@ -25,6 +25,7 @@ import sys
 from typing import Any
 from urllib.parse import quote
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -58,6 +59,14 @@ ARTIFACT_STATE_KEYS = (
 )
 UUID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 LINEAR_ISSUE_PATTERN = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
+PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
+
+
+def pacific_timestamp(now: datetime | None = None) -> str:
+    """Return a human-readable California timestamp with DST offset/name."""
+    return (now or datetime.now(timezone.utc)).astimezone(PACIFIC_TZ).strftime(
+        "%Y-%m-%d %H:%M:%S %Z (UTC%z)"
+    )
 
 
 @dataclass(frozen=True)
@@ -154,7 +163,7 @@ def main() -> int:
         artifact_snapshot = fetch_latest_snapshot(args.artifact_run_id)
         artifact_state = artifact_snapshot.state
 
-    batch_started_at = datetime.now(timezone.utc).isoformat()
+    batch_started_at = pacific_timestamp()
     print(json.dumps({
         "batch_started_at": batch_started_at,
         "batch_run_id": batch_run_id,
@@ -317,7 +326,7 @@ def warden_cli_env(warden_repo: Path) -> dict[str, str]:
     """Use the clean worktree's dependencies for every Warden CLI subprocess."""
     env = build_controller_env(os.environ, REPO_ROOT / ".env", warden_repo / ".env")
     env["PATH"] = f"{warden_repo / 'node_modules' / '.bin'}:{REPO_ROOT / '.venv' / 'bin'}:{env.get('PATH', '')}"
-    env.setdefault("WARDEN_CLIENT_RUNTIME_ROOT", str(REPO_ROOT.parent / "project-delivery" / "runtime-config"))
+    env["WARDEN_CLIENT_RUNTIME_ROOT"] = str(REPO_ROOT.parent / "project-delivery" / "runtime-config")
     return env
 
 

@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 
@@ -20,6 +21,12 @@ TASK_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 
 
 class BuildAndResumeBatchTests(unittest.TestCase):
+    def test_pacific_timestamp_uses_california_timezone_and_dst(self) -> None:
+        timestamp = build_and_resume_batch.pacific_timestamp(
+            datetime(2026, 8, 26, 3, 0, tzinfo=timezone.utc)
+        )
+        self.assertEqual(timestamp, "2026-08-25 20:00:00 PDT (UTC-0700)")
+
     def test_parse_adopt_entry_uses_task_identity(self) -> None:
         entry = build_and_resume_batch.parse_adopt_entry(
             f"{TASK_ID}|post-one|INK-147"
